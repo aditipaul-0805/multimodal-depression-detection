@@ -189,3 +189,12 @@ if prediction == 1:
     print("\n🟢 Positive / Non-depressed")
 else:
     print("\n🔴 Negative / Depressed")
+
+# ==============================
+# STEP 11: SAVE MODEL
+# ==============================
+
+model.save_pretrained("../models/text_model")
+tokenizer.save_pretrained("../models/text_model")
+
+print("✅ Text model saved successfully!")
