@@ -1,0 +1,266 @@
+import os
+
+# Path to your dataset
+DATA_PATH = "../../Data/voice"
+
+# Emotion mapping (RAVDESS)
+emotion_map = {
+    "01": "neutral",
+    "02": "calm",
+    "03": "happy",
+    "04": "sad",
+    "05": "angry",
+    "06": "fearful",
+    "07": "disgust",
+    "08": "surprised"
+}
+
+file_paths = []
+emotions = []
+
+# Traverse dataset
+for root, dirs, files in os.walk(DATA_PATH):
+    for file in files:
+        if file.endswith(".wav"):
+            
+            file_path = os.path.join(root, file)
+            
+            # Extract emotion code from filename
+            emotion_code = file.split("-")[2]
+            
+            emotion = emotion_map.get(emotion_code)
+            
+            if emotion:
+                file_paths.append(file_path)
+                emotions.append(emotion)
+
+print("✅ Total audio files loaded:", len(file_paths))
+print("Sample file:", file_paths[0])
+print("Sample emotion:", emotions[0])
+
+import librosa
+import numpy as np
+
+# Function to extract MFCC
+def extract_mfcc(file_path):
+    audio, sample_rate = librosa.load(file_path, duration=3, offset=0.5)
+    
+    mfcc = librosa.feature.mfcc(
+        y=audio,
+        sr=sample_rate,
+        n_mfcc=40
+    )
+    
+    # Convert to fixed size
+    mfcc = np.mean(mfcc.T, axis=0)
+    
+    return mfcc
+
+# Test on one file
+sample_mfcc = extract_mfcc(file_paths[0])
+
+print("✅ MFCC Feature Extracted")
+print("MFCC Shape:", sample_mfcc.shape)
+
+from tqdm import tqdm
+
+X = []
+y = []
+
+print("\n🎧 Extracting MFCC features from all audio files...")
+
+for file_path, emotion in tqdm(zip(file_paths, emotions), total=len(file_paths)):
+    mfcc = extract_mfcc(file_path)
+    
+    X.append(mfcc)
+    y.append(emotion)
+
+# Convert to numpy arrays
+X = np.array(X)
+y = np.array(y)
+
+print("✅ Dataset created successfully")
+print("X shape:", X.shape)
+print("y shape:", y.shape)
+print("Sample label:", y[0])
+
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+
+# Encode labels (text → numbers)
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+print("\n✅ Labels encoded")
+print("Classes:", le.classes_)
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_encoded, test_size=0.2, random_state=42
+)
+
+print("✅ Train-Test split done")
+print("X_train shape:", X_train.shape)
+print("X_test shape:", X_test.shape)
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout
+
+# ==============================
+# STEP 5.1: Reshape Data
+# ==============================
+X_train = X_train[..., tf.newaxis]
+X_test = X_test[..., tf.newaxis]
+
+print("\n✅ Data reshaped for CNN")
+print("New X_train shape:", X_train.shape)
+
+# ==============================
+# STEP 5.2: Build CNN Model
+# ==============================
+model = Sequential()
+
+model.add(Conv1D(64, kernel_size=3, activation='relu', input_shape=(40,1)))
+model.add(MaxPooling1D(pool_size=2))
+
+model.add(Conv1D(128, kernel_size=3, activation='relu'))
+model.add(MaxPooling1D(pool_size=2))
+
+model.add(Flatten())
+
+model.add(Dense(128, activation='relu'))
+model.add(Dropout(0.3))
+
+model.add(Dense(len(le.classes_), activation='softmax'))
+
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+print("\n✅ CNN Model Built Successfully")
+model.summary()
+
+# ==============================
+# STEP 6: Train Model
+# ==============================
+
+history = model.fit(
+    X_train,
+    y_train,
+    epochs=20,
+    batch_size=32,
+    validation_data=(X_test, y_test)
+)
+
+print("\n✅ Model training completed")
+import pickle
+
+# Save label encoder
+with open("../../models/label_encoder.pkl", "wb") as f:
+    pickle.dump(le, f)
+
+print("✅ Label encoder saved")
+
+# ==============================
+# STEP 7.1: Evaluate Model
+# ==============================
+
+loss, accuracy = model.evaluate(X_test, y_test)
+
+print(f"\n✅ Final Test Accuracy: {accuracy * 100:.2f}%")
+
+
+# ==============================
+# STEP 7.2: Save Model
+# ==============================
+
+model.save("../../models/voice_model.h5")
+
+print("✅ Voice model saved successfully!")
+
+# ==============================
+# STEP 7.5: Test Prediction on One Audio File
+# ==============================
+
+# Pick one sample file
+test_file = file_paths[0]
+
+# Extract MFCC
+mfcc = extract_mfcc(test_file)
+
+# Reshape for model
+mfcc = mfcc.reshape(1, 40, 1)
+
+# Predict
+prediction = model.predict(mfcc)
+
+predicted_label = np.argmax(prediction)
+emotion = le.inverse_transform([predicted_label])[0]
+
+print("\n🎧 Audio Prediction:")
+print("File:", test_file)
+print("Predicted Emotion:", emotion)
+##Prediction.py
+import numpy as np
+import librosa
+import tensorflow as tf
+import pickle
+import os
+
+# ==============================
+# Load model
+# ==============================
+model = tf.keras.models.load_model("../../models/voice_model.h5")
+
+# ==============================
+# Load label encoder
+# ==============================
+with open("../../models/label_encoder.pkl", "rb") as f:
+    le = pickle.load(f)
+
+# ==============================
+# MFCC extraction (same as training)
+# ==============================
+def extract_mfcc(file_path):
+    audio, sample_rate = librosa.load(file_path, duration=3, offset=0.5)
+    
+    mfcc = librosa.feature.mfcc(
+        y=audio,
+        sr=sample_rate,
+        n_mfcc=40
+    )
+    
+    mfcc = np.mean(mfcc.T, axis=0)
+    return mfcc
+
+# ==============================
+# Prediction function
+# ==============================
+def predict_emotion(file_path):
+    mfcc = extract_mfcc(file_path)
+    mfcc = mfcc.reshape(1, 40, 1)
+
+    prediction = model.predict(mfcc)
+    predicted_label = np.argmax(prediction)
+
+    emotion = le.inverse_transform([predicted_label])[0]
+    
+    return emotion
+
+
+
+# 👉 Use a REAL file from your dataset
+file = "../../Data/voice/Actor_01/03-01-01-01-01-01-01.wav"
+
+# Debug check (optional but useful)
+print("Current Working Directory:", os.getcwd())
+print("File exists:", os.path.exists(file))
+
+# Run prediction
+result = predict_emotion(file)
+
+
+print("🎧 Predicted Emotion:", result)
